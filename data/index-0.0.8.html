@@ -1,0 +1,184 @@
+<!DOCTYPE HTML>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script src="https://code.highcharts.com/modules/exporting.js"></script>
+  <script src="https://code.highcharts.com/modules/export-data.js"></script>
+  <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+  <style>
+    body {
+      min-width: 310px;
+      max-width: 800px;
+      height: 400px;
+      margin: 0 auto;
+    }
+    h2 {
+      font-family: Arial;
+      font-size: 2.5rem;
+      text-align: center;
+    }
+    button {
+      display: block;
+      margin: 20px auto;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    .nav-slider {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 20px 0;
+    }
+    .nav-slider input[type="range"] {
+      width: 100%;
+    }
+    .page-info {
+      margin: 10px 0;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESP Weather Station</h2>
+  <a href="/filemanager">Файловый менеджер</a>
+  <br>
+  <button id="loadDataButton">Загрузить все данные</button>
+  <button id="calibrateButton">Откалибровать весы</button> <!-- Новая кнопка -->
+  <div class="nav-slider">
+    <input type="range" id="pageSlider" min="0" max="0" value="0" step="1">
+    <div class="page-info" id="pageInfo">Страница 1 из 1</div>
+  </div>
+  <div id="chart-temperature" class="container"></div>
+  <div id="chart-humidity" class="container"></div>
+</body>
+<script>
+var currentPage = 0; // Текущая страница
+var pageSize = 15; // Количество строк на странице
+var totalPages = 0; // Общее количество страниц
+
+function loadData() {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var lines = this.responseText.split('\n');
+      chartT.series[0].setData([]); // Очистить текущие данные
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i]) {
+          var parts = lines[i].split(','); // Разделяем строку на части
+          if (parts.length === 2) {
+            var y = parseFloat(parts[0]); // Вес
+            var epochTime = parseInt(parts[1]); // Временная метка
+            var x = epochTime * 1000; // Преобразуем в миллисекунды
+            chartT.series[0].addPoint([x, y], true, false, true);
+          }
+        }
+      }
+      updateSlider();
+    }
+  };
+  xhttp.open("GET", "/all?page=" + currentPage, true);
+  xhttp.send();
+}
+
+// Функция для загрузки общего количества строк
+function loadCount() {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var totalLines = parseInt(this.responseText);
+      totalPages = Math.ceil(totalLines / pageSize);
+      document.getElementById('pageSlider').max = totalPages - 1; // Устанавливаем максимальное значение ползунка
+      loadData(); // Начать загрузку данных
+    }
+  };
+  xhttp.open("GET", "/count", true);
+  xhttp.send();
+}
+
+// Обновление ползунка и информации о странице
+function updateSlider() {
+  document.getElementById('pageSlider').value = currentPage;
+  document.getElementById('pageInfo').innerText = "Страница " + (currentPage + 1) + " из " + totalPages;
+}
+
+// Загрузка данных при нажатии на кнопку "Загрузить все данные"
+document.getElementById('loadDataButton').onclick = function() {
+  currentPage = 0; // Сбросить текущую страницу
+  loadCount(); // Начать загрузку данных
+};
+
+// Обработчик изменения ползунка
+document.getElementById('pageSlider').oninput = function() {
+  currentPage = parseInt(this.value);
+  loadData();
+};
+
+// Обработчик нажатия на кнопку "Откалибровать весы"
+document.getElementById('calibrateButton').onclick = function() {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      alert(this.responseText); // Показываем ответ от сервера
+    }
+  };
+  xhttp.open("GET", "/calibrate", true);
+  xhttp.send();
+};
+
+// Инициализация графика
+var chartT = new Highcharts.Chart({
+  chart: {
+    renderTo: 'chart-temperature',
+    zoomType: 'x' // Включение зумирования по оси X
+  },
+  title: { text: 'HX711 Weight' },
+  series: [{
+    showInLegend: false,
+    data: []
+  }],
+  plotOptions: {
+    line: { animation: false,
+      dataLabels: { enabled: true }
+    },
+    series: { color: '#059e8a' }
+  },
+  xAxis: { 
+    type: 'datetime',
+    dateTimeLabelFormats: { second: '%H:%M:%S' }
+  },
+  yAxis: {
+    title: { text: 'Weight (Gram)' }
+  },
+  credits: { enabled: false }
+});
+
+// Получение данных из файла на SD-карте
+var xhttp = new XMLHttpRequest();
+xhttp.onreadystatechange = function() {
+  if (this.readyState == 4 && this.status == 200) {
+    var lines = this.responseText.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i]) {
+        var parts = lines[i].split(','); // Разделяем строку на части
+        if (parts.length === 2) {
+          var y = parseFloat(parts[0]); // Вес
+          var epochTime = parseInt(parts[1]); // Временная метка
+          var x = epochTime * 1000; // Преобразуем в миллисекунды
+          chartT.series[0].addPoint([x, y], true, false, true);
+        }
+      }
+    }
+  }
+};
+xhttp.open("GET", "/data", true);
+xhttp.send();
+
+// Удаление запроса для обновления данных
+setInterval(function () {
+  // Здесь можно добавить код для обновления данных, если это необходимо
+}, 500);
+
+</script>
+</html>
